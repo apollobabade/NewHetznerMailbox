@@ -87,7 +87,9 @@ async function createMailbox(freelancer) {
     return false;
   });
 
-  if (!emailMenuExpanded) throw new Error('Email dropdown could not be clicked');
+  if (!emailMenuExpanded) {
+    throw new Error('Email dropdown could not be clicked');
+  }
 
   console.log('Clicking Mailboxes...');
   await page.waitForFunction(() => {
@@ -96,7 +98,9 @@ async function createMailbox(freelancer) {
   }, { timeout: 10000 });
 
   const mailboxLink = await page.$('dd#mailbox > a');
-  if (!mailboxLink) throw new Error('Mailboxes link not found');
+  if (!mailboxLink) {
+    throw new Error('Mailboxes link not found or not visible');
+  }
 
   console.log('Navigating to Mailboxes...');
   await Promise.all([
@@ -106,12 +110,13 @@ async function createMailbox(freelancer) {
 
   console.log('Waiting for New Mailbox link...');
   await page.waitForFunction(() => {
-    return Array.from(document.querySelectorAll('a')).some(a => a.textContent.trim() === 'New mailbox');
+    const links = Array.from(document.querySelectorAll('a'));
+    return links.some(link => link.textContent.trim() === 'New mailbox');
   }, { timeout: 15000 });
 
   console.log('Opening New Mailbox form...');
   await page.evaluate(() => {
-    const link = Array.from(document.querySelectorAll('a')).find(a => a.textContent.trim() === 'New mailbox');
+    const link = Array.from(document.querySelectorAll('a')).find(l => l.textContent.trim() === 'New mailbox');
     if (link) link.click();
   });
 
@@ -129,28 +134,32 @@ async function createMailbox(freelancer) {
   await page.type('#description_input', description);
 
   console.log('Submitting form...');
-  await page.click('input[type="submit"][value="Save"]');
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle2' }),
+    page.click('input[type="submit"][value="Save"]')
+  ]);
 
-  // Wait for navigation or reload
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {
-    console.warn('No navigation occurred after submission');
+  console.log('Checking confirmation message...');
+  const confirmationMessage = await page.evaluate(() => {
+    const element = document.querySelector('.confirmbox, .errorbox, .message, td');
+    return element ? element.innerText.trim() : '';
   });
 
-  // Verify mailbox creation
-  const mailboxExists = await page.evaluate((mailboxName) => {
-    const rows = Array.from(document.querySelectorAll('table.list tr'));
-    return rows.some(row => row.innerText.includes(mailboxName));
-  }, mailboxName);
+  console.log('Confirmation message:', confirmationMessage);
 
-  if (!mailboxExists) throw new Error(`Form was submitted, but the mailbox "${mailboxName}" was not found.`);
-
-  console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
   await browser.close();
 
-  return {
-    email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
-    password
-  };
+  if (confirmationMessage.includes('was successfully created')) {
+    console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
+    return {
+      email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
+      password: password
+    };
+  } else if (confirmationMessage.includes('could not be created')) {
+    throw new Error(`Mailbox creation failed: ${confirmationMessage}`);
+  } else {
+    throw new Error(`Mailbox creation status unknown: ${confirmationMessage}`);
+  }
 }
 
 function generatePassword() {
