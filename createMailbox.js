@@ -12,8 +12,10 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CORS and body parsing middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 app.post('/create-mailbox', async (req, res) => {
   console.log('Received POST data:', req.body);
@@ -26,7 +28,7 @@ app.post('/create-mailbox', async (req, res) => {
   const freelancer = {
     firstName,
     lastName,
-    createdBy: 'Apollo',
+    createdBy: 'Elunic',
     requestedBy
   };
 
@@ -164,8 +166,6 @@ async function createMailbox(freelancer) {
   console.log(`Email: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
   console.log(`Password: ${password}`);
 
-  // await browser.close();
-
   return {
     email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
     password: password
@@ -182,7 +182,9 @@ function generatePassword() {
   let pass = '';
   pass += lower[Math.floor(Math.random() * lower.length)];
   pass += upper[Math.floor(Math.random() * upper.length)];
-  pass += Math.random() < 0.5 ? digits[Math.floor(Math.random() * digits.length)] : specials[Math.floor(Math.random() * specials.length)];
+  pass += Math.random() < 0.5
+    ? digits[Math.floor(Math.random() * digits.length)]
+    : specials[Math.floor(Math.random() * specials.length)];
 
   while (pass.length < 12) {
     pass += all[Math.floor(Math.random() * all.length)];
