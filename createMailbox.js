@@ -11,18 +11,26 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Enable CORS
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Manual JSON parser to handle weird issues from Make
+app.use((req, res, next) => {
+  let data = '';
+  req.on('data', chunk => data += chunk);
+  req.on('end', () => {
+    try {
+      req.body = JSON.parse(data);
+    } catch (e) {
+      console.error('Invalid JSON:', data);
+      return res.status(400).send('Invalid JSON');
+    }
+    console.log('Received raw body:', req.body);
+    next();
+  });
+});
 
 app.post('/create-mailbox', async (req, res) => {
-  console.log('Headers:', req.headers);
-  console.log('Raw body:', req.body);
-
-  if (!req.body || typeof req.body !== 'object') {
-    return res.status(400).json({ error: 'Request body is not JSON or missing' });
-  }
-
   const { firstName, lastName, requestedBy } = req.body;
 
   if (!firstName || !lastName || !requestedBy) {
@@ -79,10 +87,6 @@ async function createMailbox(freelancer) {
   console.log('Clicking elunic.net to activate domain...');
   await page.waitForSelector('a.loadMenu[title="elunic.net"]', { timeout: 15000 });
   await page.click('a.loadMenu[title="elunic.net"]');
-  console.log('Waiting for Email menu to appear...');
-  await page.waitForSelector('a[href="#"] > span', { timeout: 10000 });
-
-  console.log('Waiting briefly for menu to render...');
   await new Promise(resolve => setTimeout(resolve, 3000));
 
   console.log('Expanding Email menu...');
@@ -111,7 +115,6 @@ async function createMailbox(freelancer) {
     throw new Error('Mailboxes link not found or not visible');
   }
 
-  console.log('Navigating to Mailboxes...');
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2' }),
     mailboxLink.click()
@@ -172,7 +175,7 @@ async function createMailbox(freelancer) {
 
   return {
     email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
-    password: password
+    password
   };
 }
 
