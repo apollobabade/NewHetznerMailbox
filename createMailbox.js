@@ -11,46 +11,40 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS
 app.use(cors());
-
-// Manual JSON parser to handle weird issues from Make
-app.use((req, res, next) => {
-  let data = '';
-  req.on('data', chunk => data += chunk);
-  req.on('end', () => {
-    try {
-      req.body = JSON.parse(data);
-    } catch (e) {
-      console.error('Invalid JSON:', data);
-      return res.status(400).send('Invalid JSON');
-    }
-    console.log('Received raw body:', req.body);
-    next();
-  });
-});
+// DO NOT use express.json() here to debug raw body parsing
 
 app.post('/create-mailbox', async (req, res) => {
-  const { firstName, lastName, requestedBy } = req.body;
+  let rawBody = '';
+  req.on('data', chunk => {
+    rawBody += chunk;
+  });
 
-  if (!firstName || !lastName || !requestedBy) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
+  req.on('end', async () => {
+    try {
+      const body = JSON.parse(rawBody);
+      console.log('Parsed JSON:', body);
 
-  const freelancer = {
-    firstName,
-    lastName,
-    createdBy: 'Elunic',
-    requestedBy
-  };
+      const { firstName, lastName, requestedBy } = body;
 
-  try {
-    const result = await createMailbox(freelancer);
-    return res.json(result);
-  } catch (err) {
-    console.error('Mailbox creation failed:', err);
-    return res.status(500).json({ error: 'Mailbox creation failed', detail: err.message });
-  }
+      if (!firstName || !lastName || !requestedBy) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      const freelancer = {
+        firstName,
+        lastName,
+        createdBy: 'Elunic',
+        requestedBy
+      };
+
+      const result = await createMailbox(freelancer);
+      return res.json(result);
+    } catch (err) {
+      console.error('Invalid JSON:', rawBody);
+      return res.status(400).send('Invalid JSON');
+    }
+  });
 });
 
 app.listen(PORT, () => {
@@ -69,10 +63,6 @@ async function createMailbox(freelancer) {
   console.log('Navigating to Hetzner login...');
   await page.goto('https://accounts.hetzner.com/login', { waitUntil: 'networkidle2' });
 
-  console.log("Loaded env email:", process.env.HETZNER_EMAIL);
-  console.log("Loaded env password:", process.env.HETZNER_PASSWORD);
-  console.log("Loaded env domain:", process.env.HETZNER_DOMAIN);
-
   await page.waitForSelector('#_username', { timeout: 15000 });
   await page.type('#_username', process.env.HETZNER_EMAIL);
   await page.type('#_password', process.env.HETZNER_PASSWORD);
@@ -87,6 +77,7 @@ async function createMailbox(freelancer) {
   console.log('Clicking elunic.net to activate domain...');
   await page.waitForSelector('a.loadMenu[title="elunic.net"]', { timeout: 15000 });
   await page.click('a.loadMenu[title="elunic.net"]');
+
   await new Promise(resolve => setTimeout(resolve, 3000));
 
   console.log('Expanding Email menu...');
@@ -120,12 +111,9 @@ async function createMailbox(freelancer) {
     mailboxLink.click()
   ]);
 
-  console.log('Verifying Mailboxes page loaded...');
   let attemptCount = 0;
   let atMailboxes = page.url().includes('/mailbox/list');
-
   while (attemptCount < 2 && !atMailboxes) {
-    console.log('Not on Mailboxes page. Retrying Mailboxes click...');
     const retryLink = await page.$('dd#mailbox > a');
     if (retryLink) {
       await Promise.all([
@@ -138,16 +126,14 @@ async function createMailbox(freelancer) {
   }
 
   if (!atMailboxes) {
-    throw new Error('Could not reach the Mailboxes page after retrying. Possibly redirected to Aliases.');
+    throw new Error('Could not reach the Mailboxes page after retrying.');
   }
 
-  console.log('Waiting for New Mailbox link...');
   await page.waitForFunction(() => {
     const links = Array.from(document.querySelectorAll('a'));
     return links.some(link => link.textContent.trim() === 'New mailbox');
   }, { timeout: 15000 });
 
-  console.log('Opening New Mailbox form...');
   await page.evaluate(() => {
     const link = Array.from(document.querySelectorAll('a')).find(l => l.textContent.trim() === 'New mailbox');
     if (link) link.click();
@@ -155,7 +141,6 @@ async function createMailbox(freelancer) {
 
   await page.waitForSelector('#localaddress_input', { timeout: 10000 });
 
-  console.log('Filling mailbox form...');
   const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
   const password = generatePassword();
 
@@ -166,7 +151,6 @@ async function createMailbox(freelancer) {
   const description = `erstellt: ${freelancer.createdBy}, request: ${freelancer.requestedBy}, freelancer: ${freelancer.firstName} ${freelancer.lastName}`;
   await page.type('#description_input', description);
 
-  console.log('Submitting form...');
   await page.click('input[type="submit"][value="Save"]');
 
   console.log('Mailbox created successfully!');
@@ -175,7 +159,7 @@ async function createMailbox(freelancer) {
 
   return {
     email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
-    password
+    password: password
   };
 }
 
@@ -189,7 +173,9 @@ function generatePassword() {
   let pass = '';
   pass += lower[Math.floor(Math.random() * lower.length)];
   pass += upper[Math.floor(Math.random() * upper.length)];
-  pass += Math.random() < 0.5 ? digits[Math.floor(Math.random() * digits.length)] : specials[Math.floor(Math.random() * specials.length)];
+  pass += Math.random() < 0.5
+    ? digits[Math.floor(Math.random() * digits.length)]
+    : specials[Math.floor(Math.random() * specials.length)];
 
   while (pass.length < 12) {
     pass += all[Math.floor(Math.random() * all.length)];
