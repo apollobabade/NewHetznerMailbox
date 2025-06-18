@@ -16,6 +16,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.post('/create-mailbox', async (req, res) => {
+  console.log('Received POST data:', req.body);
   const { firstName, lastName, requestedBy } = req.body;
 
   if (!firstName || !lastName || !requestedBy) {
