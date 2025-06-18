@@ -16,7 +16,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.post('/create-mailbox', async (req, res) => {
-  console.log('Received POST data:', req.body);
+  console.log('Headers:', req.headers);
+  console.log('Raw body:', req.body);
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Request body is not JSON or missing' });
+  }
+
   const { firstName, lastName, requestedBy } = req.body;
 
   if (!firstName || !lastName || !requestedBy) {
@@ -26,7 +32,7 @@ app.post('/create-mailbox', async (req, res) => {
   const freelancer = {
     firstName,
     lastName,
-    createdBy: 'Apollo',
+    createdBy: 'Elunic',
     requestedBy
   };
 
