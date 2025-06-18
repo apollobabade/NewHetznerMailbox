@@ -70,18 +70,37 @@ async function createMailbox(freelancer) {
   await page.waitForSelector('a.loadMenu[title="elunic.net"]', { timeout: 15000 });
   await page.click('a.loadMenu[title="elunic.net"]');
 
-  await page.waitForTimeout(3000);
+  console.log('Waiting for Email menu to appear...');
+  await page.waitForSelector('a[href="#"] > span', { timeout: 10000 });
+
+  console.log('Waiting briefly for menu to render...');
+  await new Promise(resolve => setTimeout(resolve, 3000));
 
   console.log('Expanding Email menu...');
-  await page.evaluate(() => {
+  const emailMenuExpanded = await page.evaluate(() => {
     const spans = Array.from(document.querySelectorAll('a[href="#"] > span'));
     const target = spans.find(span => span.textContent.includes(''));
-    if (target && target.parentElement) target.parentElement.click();
+    if (target && target.parentElement) {
+      target.parentElement.click();
+      return true;
+    }
+    return false;
   });
 
-  await page.waitForSelector('dd#mailbox > a', { timeout: 10000 });
+  if (!emailMenuExpanded) {
+    throw new Error('Email dropdown could not be clicked');
+  }
+
+  console.log('Clicking Mailboxes...');
+  await page.waitForFunction(() => {
+    const el = document.querySelector('dd#mailbox > a');
+    return el && el.offsetParent !== null;
+  }, { timeout: 10000 });
+
   const mailboxLink = await page.$('dd#mailbox > a');
-  if (!mailboxLink) throw new Error('Mailboxes link not found');
+  if (!mailboxLink) {
+    throw new Error('Mailboxes link not found or not visible');
+  }
 
   console.log('Navigating to Mailboxes...');
   await Promise.all([
@@ -89,24 +108,24 @@ async function createMailbox(freelancer) {
     mailboxLink.click()
   ]);
 
+  console.log('Waiting for New Mailbox link...');
   await page.waitForFunction(() => {
-    return Array.from(document.querySelectorAll('a'))
-      .some(link => link.textContent.trim() === 'New mailbox');
+    const links = Array.from(document.querySelectorAll('a'));
+    return links.some(link => link.textContent.trim() === 'New mailbox');
   }, { timeout: 15000 });
 
   console.log('Opening New Mailbox form...');
   await page.evaluate(() => {
-    const link = Array.from(document.querySelectorAll('a'))
-      .find(l => l.textContent.trim() === 'New mailbox');
+    const link = Array.from(document.querySelectorAll('a')).find(l => l.textContent.trim() === 'New mailbox');
     if (link) link.click();
   });
 
   await page.waitForSelector('#localaddress_input', { timeout: 10000 });
 
+  console.log('Filling mailbox form...');
   const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
   const password = generatePassword();
 
-  console.log('Filling form...');
   await page.type('#localaddress_input', mailboxName);
   await page.type('#password_input', password);
   await page.type('#password_repeat_input', password);
@@ -115,19 +134,14 @@ async function createMailbox(freelancer) {
   await page.type('#description_input', description);
 
   console.log('Submitting form...');
-  await page.evaluate(() => {
-    const form = document.querySelector('form[action$="mailbox/save"]');
-    if (form) form.submit();
-  });
-
-  await page.waitForNavigation({ waitUntil: 'networkidle2' });
+  await page.click('input[type="submit"][value="Save"]');
 
   console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
   await browser.close();
 
   return {
     email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
-    password: password
+    password
   };
 }
 
@@ -141,9 +155,7 @@ function generatePassword() {
   let pass = '';
   pass += lower[Math.floor(Math.random() * lower.length)];
   pass += upper[Math.floor(Math.random() * upper.length)];
-  pass += Math.random() < 0.5
-    ? digits[Math.floor(Math.random() * digits.length)]
-    : specials[Math.floor(Math.random() * specials.length)];
+  pass += Math.random() < 0.5 ? digits[Math.floor(Math.random() * digits.length)] : specials[Math.floor(Math.random() * specials.length)];
 
   while (pass.length < 12) {
     pass += all[Math.floor(Math.random() * all.length)];
