@@ -69,12 +69,8 @@ async function createMailbox(freelancer) {
   console.log('Clicking elunic.net to activate domain...');
   await page.waitForSelector('a.loadMenu[title="elunic.net"]', { timeout: 15000 });
   await page.click('a.loadMenu[title="elunic.net"]');
-
-  console.log('Waiting for Email menu to appear...');
   await page.waitForSelector('a[href="#"] > span', { timeout: 10000 });
-
-  console.log('Waiting briefly for menu to render...');
-  await new Promise(resolve => setTimeout(resolve, 3000));
+  await page.waitForTimeout(3000);
 
   console.log('Expanding Email menu...');
   const emailMenuExpanded = await page.evaluate(() => {
@@ -98,17 +94,17 @@ async function createMailbox(freelancer) {
   }, { timeout: 10000 });
 
   const mailboxLink = await page.$('dd#mailbox > a');
-  if (!mailboxLink) {
-    throw new Error('Mailboxes link not found or not visible');
-  }
+  if (!mailboxLink) throw new Error('Mailboxes link not found');
 
-  console.log('Navigating to Mailboxes...');
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2' }),
     mailboxLink.click()
   ]);
 
-  console.log('Waiting for New Mailbox link...');
+  await page.waitForFunction(() => {
+    return window.location.href.includes('/mailbox/list');
+  }, { timeout: 10000 });
+
   await page.waitForFunction(() => {
     const links = Array.from(document.querySelectorAll('a'));
     return links.some(link => link.textContent.trim() === 'New mailbox');
@@ -120,7 +116,7 @@ async function createMailbox(freelancer) {
     if (link) link.click();
   });
 
-  await page.waitForSelector('#localaddress_input', { timeout: 10000 });
+  await page.waitForSelector('#localaddress_input', { visible: true, timeout: 10000 });
 
   console.log('Filling mailbox form...');
   const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
@@ -140,25 +136,23 @@ async function createMailbox(freelancer) {
   ]);
 
   console.log('Checking confirmation message...');
-  const confirmationMessage = await page.evaluate(() => {
-    const element = document.querySelector('.confirmbox, .errorbox, .message, td');
-    return element ? element.innerText.trim() : '';
-  });
+  const successMessage = await page.$eval('div.ok', el => el.textContent).catch(() => null);
+  const errorMessage = await page.$eval('div.error', el => el.textContent).catch(() => null);
 
-  console.log('Confirmation message:', confirmationMessage);
-
-  await browser.close();
-
-  if (confirmationMessage.includes('was successfully created')) {
+  if (successMessage) {
     console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
+    await browser.close();
     return {
       email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
       password: password
     };
-  } else if (confirmationMessage.includes('could not be created')) {
-    throw new Error(`Mailbox creation failed: ${confirmationMessage}`);
+  } else if (errorMessage) {
+    await browser.close();
+    throw new Error(`Hetzner error: ${errorMessage}`);
   } else {
-    throw new Error(`Mailbox creation status unknown: ${confirmationMessage}`);
+    const rawMessage = await page.evaluate(() => document.body.innerText);
+    await browser.close();
+    throw new Error(`Mailbox creation status unknown: ${rawMessage.trim().slice(0, 100)}`);
   }
 }
 
