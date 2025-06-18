@@ -1,39 +1,36 @@
-// Load environment variables
 require('dotenv').config();
 
-// Core imports
-const express = require('express');
-const cors = require('cors');
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const puppeteer = require('puppeteer'); // NOTE: use "puppeteer" not "puppeteer-core"
+const puppeteer = require('puppeteer');
 puppeteerExtra.use(StealthPlugin());
+
+const express = require('express');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware setup
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// POST endpoint
 app.post('/create-mailbox', async (req, res) => {
+  console.log('Received POST data:', req.body);
+  const { firstName, lastName, requestedBy } = req.body;
+
+  if (!firstName || !lastName || !requestedBy) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const freelancer = {
+    firstName,
+    lastName,
+    createdBy: 'Elunic',
+    requestedBy
+  };
+
   try {
-    const { firstName, lastName, requestedBy } = req.body;
-    console.log('Received POST data:', req.body);
-
-    if (!firstName || !lastName || !requestedBy) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const freelancer = {
-      firstName,
-      lastName,
-      createdBy: 'Elunic',
-      requestedBy
-    };
-
     const result = await createMailbox(freelancer);
     return res.json(result);
   } catch (err) {
@@ -42,107 +39,137 @@ app.post('/create-mailbox', async (req, res) => {
   }
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
-// Create mailbox logic
 async function createMailbox(freelancer) {
   const browser = await puppeteerExtra.launch({
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--single-process'
-    ]
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
 
+  console.log('Navigating to Hetzner login...');
   await page.goto('https://accounts.hetzner.com/login', { waitUntil: 'networkidle2' });
-  await page.type('#_username', process.env.HETZNER_EMAIL);
-  await page.type('#_password', process.env.HETZNER_PASSWORD);
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
-    page.click('#submit-login')
-  ]);
 
-  await page.goto('https://konsoleh.hetzner.com/products.php', { waitUntil: 'networkidle2' });
-  await page.waitForSelector(`a.loadMenu[title="${process.env.HETZNER_DOMAIN}"]`, { timeout: 15000 });
-  await page.click(`a.loadMenu[title="${process.env.HETZNER_DOMAIN}"]`);
+  try {
+    await page.waitForSelector('#_username', { timeout: 15000 });
+    await page.type('#_username', process.env.HETZNER_EMAIL);
+    await page.type('#_password', process.env.HETZNER_PASSWORD);
 
-  await new Promise(resolve => setTimeout(resolve, 3000));
-
-  const emailMenuExpanded = await page.evaluate(() => {
-    const spans = Array.from(document.querySelectorAll('a[href="#"] > span'));
-    const target = spans.find(span => span.textContent.includes(''));
-    if (target && target.parentElement) {
-      target.parentElement.click();
-      return true;
-    }
-    return false;
-  });
-  if (!emailMenuExpanded) throw new Error('Email dropdown could not be clicked');
-
-  await page.waitForFunction(() => {
-    const el = document.querySelector('dd#mailbox > a');
-    return el && el.offsetParent !== null;
-  }, { timeout: 10000 });
-
-  const mailboxLink = await page.$('dd#mailbox > a');
-  if (!mailboxLink) throw new Error('Mailboxes link not found');
-
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
-    mailboxLink.click()
-  ]);
-
-  let attemptCount = 0;
-  while (attemptCount < 2 && !page.url().includes('/mailbox/list')) {
-    const retryLink = await page.$('dd#mailbox > a');
-    if (retryLink) {
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2' }),
-        retryLink.click()
-      ]);
-    }
-    attemptCount++;
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('#submit-login')
+    ]);
+  } catch (err) {
+    console.error('Error during login:', err.message);
+    await browser.close();
+    throw new Error('Login step failed: ' + err.message);
   }
 
-  if (!page.url().includes('/mailbox/list')) {
-    throw new Error('Still not on Mailboxes page after retries');
+  try {
+    console.log('Navigating to Products page...');
+    await page.goto('https://konsoleh.hetzner.com/products.php', { waitUntil: 'networkidle2' });
+  } catch (err) {
+    console.error('Error navigating to products:', err.message);
+    await browser.close();
+    throw new Error('Product navigation failed: ' + err.message);
   }
 
-  await page.waitForFunction(() => {
-    return Array.from(document.querySelectorAll('a')).some(a => a.textContent.trim() === 'New mailbox');
-  }, { timeout: 15000 });
+  try {
+    console.log('Clicking elunic.net to activate domain...');
+    await page.waitForSelector('a.loadMenu[title="elunic.net"]', { timeout: 15000 });
+    await page.click('a.loadMenu[title="elunic.net"]');
 
-  await page.evaluate(() => {
-    const link = Array.from(document.querySelectorAll('a')).find(a => a.textContent.trim() === 'New mailbox');
-    if (link) link.click();
-  });
+    console.log('Waiting for Email menu to appear...');
+    await page.waitForSelector('a[href="#"] > span', { timeout: 10000 });
 
-  await page.waitForSelector('#localaddress_input', { timeout: 10000 });
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
-  const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
-  const password = generatePassword();
+    console.log('Expanding Email menu...');
+    const emailMenuExpanded = await page.evaluate(() => {
+      const spans = Array.from(document.querySelectorAll('a[href="#"] > span'));
+      const target = spans.find(span => span.textContent.includes(''));
+      if (target && target.parentElement) {
+        target.parentElement.click();
+        return true;
+      }
+      return false;
+    });
 
-  await page.type('#localaddress_input', mailboxName);
-  await page.type('#password_input', password);
-  await page.type('#password_repeat_input', password);
-  await page.type('#description_input', `erstellt: ${freelancer.createdBy}, request: ${freelancer.requestedBy}, freelancer: ${freelancer.firstName} ${freelancer.lastName}`);
+    if (!emailMenuExpanded) throw new Error('Email dropdown could not be clicked');
 
-  await page.click('input[type="submit"][value="Save"]');
+    console.log('Clicking Mailboxes...');
+    await page.waitForFunction(() => {
+      const el = document.querySelector('dd#mailbox > a');
+      return el && el.offsetParent !== null;
+    }, { timeout: 10000 });
 
-  return {
-    email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
-    password
-  };
+    const mailboxLink = await page.$('dd#mailbox > a');
+    if (!mailboxLink) throw new Error('Mailboxes link not found or not visible');
+
+    console.log('Navigating to Mailboxes...');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      mailboxLink.click()
+    ]);
+
+    let attemptCount = 0;
+    let atMailboxes = page.url().includes('/mailbox/list');
+
+    while (attemptCount < 2 && !atMailboxes) {
+      console.log('Retrying Mailboxes click...');
+      const retryLink = await page.$('dd#mailbox > a');
+      if (retryLink) {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2' }),
+          retryLink.click()
+        ]);
+      }
+      atMailboxes = page.url().includes('/mailbox/list');
+      attemptCount++;
+    }
+
+    if (!atMailboxes) throw new Error('Could not reach Mailboxes page after retrying');
+
+    await page.waitForFunction(() => {
+      const links = Array.from(document.querySelectorAll('a'));
+      return links.some(link => link.textContent.trim() === 'New mailbox');
+    }, { timeout: 15000 });
+
+    await page.evaluate(() => {
+      const link = Array.from(document.querySelectorAll('a')).find(l => l.textContent.trim() === 'New mailbox');
+      if (link) link.click();
+    });
+
+    await page.waitForSelector('#localaddress_input', { timeout: 10000 });
+
+    const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
+    const password = generatePassword();
+
+    await page.type('#localaddress_input', mailboxName);
+    await page.type('#password_input', password);
+    await page.type('#password_repeat_input', password);
+
+    const description = `erstellt: ${freelancer.createdBy}, request: ${freelancer.requestedBy}, freelancer: ${freelancer.firstName} ${freelancer.lastName}`;
+    await page.type('#description_input', description);
+
+    await page.click('input[type="submit"][value="Save"]');
+
+    console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
+
+    await browser.close();
+    return {
+      email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
+      password: password
+    };
+  } catch (err) {
+    await browser.close();
+    throw err;
+  }
 }
 
 function generatePassword() {
@@ -151,10 +178,15 @@ function generatePassword() {
   const digits = '0123456789';
   const specials = '!$%()=?+#-.:~*@[]_';
   const all = lower + upper + digits + specials;
+
   let pass = '';
   pass += lower[Math.floor(Math.random() * lower.length)];
   pass += upper[Math.floor(Math.random() * upper.length)];
   pass += Math.random() < 0.5 ? digits[Math.floor(Math.random() * digits.length)] : specials[Math.floor(Math.random() * specials.length)];
-  while (pass.length < 12) pass += all[Math.floor(Math.random() * all.length)];
+
+  while (pass.length < 12) {
+    pass += all[Math.floor(Math.random() * all.length)];
+  }
+
   return pass;
 }
