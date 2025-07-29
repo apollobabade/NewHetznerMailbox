@@ -64,7 +64,7 @@ async function createMailbox(freelancer) {
   ]);
 
   console.log('Navigating to Products page...');
-  await page.goto('https://konsoleh.hetzner.com/products.php', { waitUntil: 'networkidle2' });
+  await page.goto('https://konsoleh.hetzner.com', { waitUntil: 'networkidle2' });
 
   console.log('Clicking elunic.net to activate domain...');
   await page.waitForSelector('a.loadMenu[title="elunic.net"]', { timeout: 15000 });
