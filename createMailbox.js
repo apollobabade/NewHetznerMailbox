@@ -30,9 +30,10 @@ app.post('/create-mailbox', async (req, res) => {
     return res.json(result);
   } catch (err) {
     console.error('Mailbox creation failed:', err);
-    return res
-      .status(500)
-      .json({ error: 'Mailbox creation failed', detail: err.message });
+    return res.status(500).json({
+      error: 'Mailbox creation failed',
+      detail: err.message,
+    });
   }
 });
 
@@ -49,7 +50,7 @@ async function createMailbox(freelancer) {
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
-  await page.setDefaultTimeout(30000);
+  await page.setDefaultTimeout(60000);
 
   /* ---------------------- Utilities ---------------------- */
   async function retry(page, fn, retries = 3, delay = 2000) {
@@ -74,7 +75,6 @@ async function createMailbox(freelancer) {
     const digits = '0123456789';
     const specials = '!$%()=?+#-.:~*@[]_';
     const all = lower + upper + digits + specials;
-
     let pass = '';
     pass += lower[Math.floor(Math.random() * lower.length)];
     pass += upper[Math.floor(Math.random() * upper.length)];
@@ -90,14 +90,38 @@ async function createMailbox(freelancer) {
   console.log('Navigating to Hetzner KonsoleH login...');
   await page.goto('https://konsoleh.hetzner.com', { waitUntil: 'networkidle2' });
 
-  await page.waitForSelector('input[name="login_user"]', { timeout: 20000 });
-  await page.type('input[name="login_user"]', process.env.HETZNER_EMAIL);
-  await page.type('input[name="login_pass"]', process.env.HETZNER_PASSWORD);
+  // Handle cookie banner if present
+  try {
+    await page.waitForSelector('button#onetrust-accept-btn-handler', { timeout: 5000 });
+    await page.click('button#onetrust-accept-btn-handler');
+    console.log('Cookie banner dismissed.');
+  } catch (e) {}
 
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
-    page.click('input[type="submit"]'),
-  ]);
+  // Detect login type
+  await page.waitForFunction(() => {
+    return (
+      document.querySelector('input[name="login_user"]') ||
+      document.querySelector('#_username')
+    );
+  }, { timeout: 40000 });
+
+  if (await page.$('input[name="login_user"]')) {
+    console.log('Detected KonsoleH login page.');
+    await page.type('input[name="login_user"]', process.env.HETZNER_EMAIL);
+    await page.type('input[name="login_pass"]', process.env.HETZNER_PASSWORD);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('input[type="submit"]'),
+    ]);
+  } else {
+    console.log('Detected Accounts.hetzner.com login page.');
+    await page.type('#_username', process.env.HETZNER_EMAIL);
+    await page.type('#_password', process.env.HETZNER_PASSWORD);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('#submit-login'),
+    ]);
+  }
 
   console.log('Logged in successfully.');
 
