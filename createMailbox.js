@@ -233,7 +233,7 @@ async function createMailbox(freelancer) {
     page.click('input[type="submit"][value="Save"]'),
   ]);
 
-  /* ---------------------- Confirmation ---------------------- */
+  /* ---------------------- Confirmations ---------------------- */
   const resultMessage = await retry(page, async () => {
     const msg = await page.evaluate(() => {
       const okBox = document.querySelector('div.ok');
