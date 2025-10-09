@@ -43,10 +43,30 @@ app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
    Main mailbox creation logic
 --------------------------------------------------------- */
 async function createMailbox(freelancer) {
+  // --- Double-locked headless mode logic ---
+  const isProduction =
+    process.env.RAILWAY_ENVIRONMENT ||
+    process.env.NODE_ENV === 'production' ||
+    process.env.RAILWAY_STATIC_URL;
+
+  const headlessMode = isProduction
+    ? true
+    : process.env.HEADLESS !== 'false';
+
+  console.log(
+    `Launching browser in ${headlessMode ? 'headless' : 'visible'} mode...`
+  );
+
   const browser = await puppeteerExtra.launch({
-    headless: false,
-    slowMo: 75,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    headless: headlessMode,
+    slowMo: headlessMode ? 0 : 75,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+    ],
     defaultViewport: { width: 1280, height: 800 },
   });
 
@@ -260,7 +280,11 @@ async function createMailbox(freelancer) {
   console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
   console.log('Result message:', resultMessage);
 
-  await browser.close();
+  try {
+    await browser.close();
+  } catch {
+    console.log('Browser already closed or cleaned up.');
+  }
 
   return {
     email: `${mailboxName}@${process.env.HETZNER_DOMAIN}`,
