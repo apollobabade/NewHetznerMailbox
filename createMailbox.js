@@ -254,7 +254,12 @@ async function createMailbox(freelancer) {
   });
 
   console.log(`Creating mailbox for ${freelancer.firstName} ${freelancer.lastName}...`);
-  const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
+
+  // --- Sanitized mailbox name creation ---
+  let cleanLast = freelancer.lastName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ''); // remove spaces & special chars
+  const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${cleanLast}`;
   const password = generatePassword();
 
   await page.type('#localaddress_input', mailboxName);
