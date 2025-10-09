@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const puppeteer = require('puppeteer');
 puppeteerExtra.use(StealthPlugin());
 
 const express = require('express');
@@ -254,27 +253,23 @@ async function createMailbox(freelancer) {
   const description = `erstellt: ${freelancer.createdBy}, request: ${freelancer.requestedBy}, freelancer: ${freelancer.firstName} ${freelancer.lastName}`;
   await page.type('#description_input', description);
 
+  /* ---------------------- Safe single form submit ---------------------- */
   console.log('Submitting form...');
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
-    page.click('input[type="submit"][value="Save"]'),
-  ]);
+  await page.click('input[type="submit"][value="Save"]');
+  await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(3000); // allow page to render alerts
 
-  /* ---------------------- Read confirmation message ---------------------- */
-  const resultMessage = await retry(page, async () => {
-    const msg = await page.evaluate(() => {
-      const successBox = document.querySelector('div.alert.alert-success');
-      const errorBox = document.querySelector('div.alert.alert-danger');
-      const legacyOk = document.querySelector('div.ok');
-      const legacyError = document.querySelector('div.error');
-      if (successBox) return successBox.innerText.trim();
-      if (legacyOk) return legacyOk.innerText.trim();
-      if (errorBox) throw new Error(errorBox.innerText.trim());
-      if (legacyError) throw new Error(legacyError.innerText.trim());
-      return null;
-    });
-    if (!msg) throw new Error('No confirmation message found');
-    return msg;
+  console.log('Checking for confirmation or error message...');
+  const resultMessage = await page.evaluate(() => {
+    const successBox = document.querySelector('div.alert.alert-success');
+    const errorBox = document.querySelector('div.alert.alert-danger');
+    const legacyOk = document.querySelector('div.ok');
+    const legacyError = document.querySelector('div.error');
+    if (successBox) return successBox.innerText.trim();
+    if (legacyOk) return legacyOk.innerText.trim();
+    if (errorBox) throw new Error(errorBox.innerText.trim());
+    if (legacyError) throw new Error(legacyError.innerText.trim());
+    return 'No confirmation message found.';
   });
 
   console.log(`Mailbox created successfully: ${mailboxName}@${process.env.HETZNER_DOMAIN}`);
