@@ -63,8 +63,6 @@ async function createMailbox(freelancer) {
           await page.waitForTimeout(delay);
           await page.reload({ waitUntil: 'networkidle2' }).catch(() => {});
         } else {
-          await page.screenshot({ path: `error-${Date.now()}.png` });
-          console.warn(`Saved screenshot: error-${Date.now()}.png`);
           throw err;
         }
       }
@@ -99,7 +97,7 @@ async function createMailbox(freelancer) {
     console.log('Cookie banner dismissed.');
   } catch (e) {}
 
-  // Detect login type
+  // Detect login type (KonsoleH direct vs Accounts)
   await page.waitForFunction(() => {
     return (
       document.querySelector('input[name="login_user"]') ||
@@ -127,54 +125,59 @@ async function createMailbox(freelancer) {
 
   console.log('Logged in successfully.');
 
+  /* ---------------------- Force redirect to console ---------------------- */
+  console.log('Ensuring we are inside KonsoleH console...');
+  await page.goto('https://konsoleh.hetzner.com/', { waitUntil: 'networkidle2' });
+  await page.waitForSelector('body', { timeout: 30000 });
+  console.log('Confirmed console loaded.');
+
   /* ---------------------- Navigate to elunic.net ---------------------- */
   await retry(page, async () => {
-    console.log('Waiting for server list...');
+    console.log('Looking for dedi2093.your-server.de...');
     await page.waitForFunction(() => {
-      return Array.from(document.querySelectorAll('a, div')).some(el =>
+      return Array.from(document.querySelectorAll('*')).some(el =>
         el.textContent.includes('dedi2093.your-server.de')
       );
-    }, { timeout: 30000 });
+    }, { timeout: 45000 });
 
     console.log('Expanding dedi2093.your-server.de...');
     await page.evaluate(() => {
-      const serverRow = Array.from(document.querySelectorAll('a, div'))
+      const server = Array.from(document.querySelectorAll('*'))
         .find(el => el.textContent.includes('dedi2093.your-server.de'));
-      if (serverRow) {
-        const expandButton = serverRow.closest('tr, div')?.querySelector('.toggle, .expand, button');
-        if (expandButton) expandButton.click();
+      if (server) {
+        const expand = server.closest('tr, div')?.querySelector('button, .toggle, .expand');
+        if (expand) expand.click();
       }
     });
 
     await page.waitForTimeout(3000);
 
-    console.log('Searching for elunic.net...');
+    console.log('Selecting elunic.net...');
     await page.waitForFunction(() => {
-      return Array.from(document.querySelectorAll('a, div')).some(el =>
+      return Array.from(document.querySelectorAll('*')).some(el =>
         el.textContent.includes('elunic.net')
       );
     }, { timeout: 20000 });
 
-    console.log('Clicking elunic.net...');
     await page.evaluate(() => {
-      const elunicLink = Array.from(document.querySelectorAll('a, div'))
+      const elunic = Array.from(document.querySelectorAll('*'))
         .find(el => el.textContent.includes('elunic.net'));
-      if (elunicLink) elunicLink.click();
+      if (elunic) elunic.click();
     });
 
     await page.waitForNavigation({ waitUntil: 'networkidle2' });
     console.log('elunic.net loaded successfully.');
 
-    // Sidebar navigation
+    // Sidebar: open Email → Mailboxes
     console.log('Opening Email sidebar...');
     await page.waitForFunction(() => {
-      return Array.from(document.querySelectorAll('span, a, div')).some(el =>
+      return Array.from(document.querySelectorAll('*')).some(el =>
         el.textContent.trim() === 'Email'
       );
     }, { timeout: 15000 });
 
     await page.evaluate(() => {
-      const emailSection = Array.from(document.querySelectorAll('span, a, div'))
+      const emailSection = Array.from(document.querySelectorAll('*'))
         .find(el => el.textContent.trim() === 'Email');
       if (emailSection) emailSection.click();
     });
@@ -183,16 +186,16 @@ async function createMailbox(freelancer) {
 
     console.log('Clicking Mailboxes...');
     await page.evaluate(() => {
-      const mailboxLink = Array.from(document.querySelectorAll('a, div'))
+      const mailbox = Array.from(document.querySelectorAll('*'))
         .find(el => el.textContent.trim() === 'Mailboxes');
-      if (mailboxLink) mailboxLink.click();
+      if (mailbox) mailbox.click();
     });
 
     await page.waitForNavigation({ waitUntil: 'networkidle2' });
     console.log('Mailboxes page loaded.');
   });
 
-  /* ---------------------- Open Create Mailbox Form ---------------------- */
+  /* ---------------------- Create Mailbox ---------------------- */
   await retry(page, async () => {
     console.log('Clicking New Mailbox...');
     await page.waitForFunction(() => {
@@ -210,13 +213,10 @@ async function createMailbox(freelancer) {
 
     await page.waitForNavigation({ waitUntil: 'networkidle2' });
     console.log('Create Mailbox page loaded.');
-
     await page.waitForSelector('#localaddress_input', { timeout: 20000 });
   });
 
-  /* ---------------------- Fill Form & Submit ---------------------- */
   console.log(`Creating mailbox for ${freelancer.firstName} ${freelancer.lastName}...`);
-
   const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${freelancer.lastName.toLowerCase()}`;
   const password = generatePassword();
 
@@ -233,8 +233,6 @@ async function createMailbox(freelancer) {
     page.click('input[type="submit"][value="Save"]'),
   ]);
 
-  /* ---------------------- Trigger Redeploy ---------------------- */
-  /* ---------------------- Confirmation ---------------------- */
   const resultMessage = await retry(page, async () => {
     const msg = await page.evaluate(() => {
       const okBox = document.querySelector('div.ok');
