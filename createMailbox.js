@@ -127,83 +127,90 @@ async function createMailbox(freelancer) {
 
   console.log('Logged in successfully.');
 
-  /* ---------------------- Expand Server & Domain ---------------------- */
+  /* ---------------------- Navigate to elunic.net ---------------------- */
   await retry(page, async () => {
-    console.log('Navigating to Products page...');
-    // Sometimes you're dropped on a dashboard — find the "Products" link or tab
-    const productsLink = await page.$x("//a[contains(., 'Products') or contains(., 'product')]");
-    if (productsLink.length > 0) {
-      console.log('Clicking Products link...');
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2' }),
-        productsLink[0].click(),
-      ]);
-    } else {
-      console.log('No Products link found, continuing...');
-    }
-
     console.log('Waiting for server list...');
     await page.waitForFunction(() => {
-      return (
-        document.querySelector('tr.server') ||
-        document.querySelector('tr.server-row')
+      return Array.from(document.querySelectorAll('a, div')).some(el =>
+        el.textContent.includes('dedi2093.your-server.de')
       );
     }, { timeout: 30000 });
 
-    const serverExists = await page.$('tr.server') || await page.$('tr.server-row');
-    if (!serverExists) throw new Error('Server list not found after Products page');
-
-    console.log('Expanding server row...');
+    console.log('Expanding dedi2093.your-server.de...');
     await page.evaluate(() => {
-      const serverRow = document.querySelector('tr.server, tr.server-row');
+      const serverRow = Array.from(document.querySelectorAll('a, div'))
+        .find(el => el.textContent.includes('dedi2093.your-server.de'));
       if (serverRow) {
-        const expandBtn = serverRow.querySelector('.toggle');
-        if (expandBtn) expandBtn.click();
+        const expandButton = serverRow.closest('tr, div')?.querySelector('.toggle, .expand, button');
+        if (expandButton) expandButton.click();
       }
     });
 
     await page.waitForTimeout(3000);
 
-    console.log('Selecting elunic.net domain...');
+    console.log('Searching for elunic.net...');
     await page.waitForFunction(() => {
-      return Array.from(document.querySelectorAll('tr.domain a, td a')).some((a) =>
-        a.textContent.includes('elunic.net')
+      return Array.from(document.querySelectorAll('a, div')).some(el =>
+        el.textContent.includes('elunic.net')
+      );
+    }, { timeout: 20000 });
+
+    console.log('Clicking elunic.net...');
+    await page.evaluate(() => {
+      const elunicLink = Array.from(document.querySelectorAll('a, div'))
+        .find(el => el.textContent.includes('elunic.net'));
+      if (elunicLink) elunicLink.click();
+    });
+
+    await page.waitForNavigation({ waitUntil: 'networkidle2' });
+    console.log('elunic.net loaded successfully.');
+
+    // Sidebar navigation
+    console.log('Opening Email sidebar...');
+    await page.waitForFunction(() => {
+      return Array.from(document.querySelectorAll('span, a, div')).some(el =>
+        el.textContent.trim() === 'Email'
       );
     }, { timeout: 15000 });
 
     await page.evaluate(() => {
-      const link = Array.from(document.querySelectorAll('tr.domain a, td a')).find((a) =>
-        a.textContent.includes('elunic.net')
-      );
-      if (link) link.click();
+      const emailSection = Array.from(document.querySelectorAll('span, a, div'))
+        .find(el => el.textContent.trim() === 'Email');
+      if (emailSection) emailSection.click();
+    });
+
+    await page.waitForTimeout(1000);
+
+    console.log('Clicking Mailboxes...');
+    await page.evaluate(() => {
+      const mailboxLink = Array.from(document.querySelectorAll('a, div'))
+        .find(el => el.textContent.trim() === 'Mailboxes');
+      if (mailboxLink) mailboxLink.click();
     });
 
     await page.waitForNavigation({ waitUntil: 'networkidle2' });
-  });
-
-  console.log('Stabilizing domain context...');
-  await page.waitForTimeout(3000);
-  await page.reload({ waitUntil: 'networkidle2' }).catch(() => {});
-
-  /* ---------------------- Navigate to Mailboxes ---------------------- */
-  await retry(page, async () => {
-    console.log('Opening Mailboxes list...');
-    await page.goto('https://konsoleh.hetzner.com/mail/mailbox/list', {
-      waitUntil: 'networkidle2',
-    });
-    const html = await page.content();
-    if (html.includes('Internal error') || !html.includes('Mailbox'))
-      throw new Error('Mailboxes list failed to load');
+    console.log('Mailboxes page loaded.');
   });
 
   /* ---------------------- Open Create Mailbox Form ---------------------- */
   await retry(page, async () => {
-    console.log('Opening Create Mailbox page...');
-    await page.goto('https://konsoleh.hetzner.com/mail/mailbox/create', {
-      waitUntil: 'networkidle2',
+    console.log('Clicking New Mailbox...');
+    await page.waitForFunction(() => {
+      return Array.from(document.querySelectorAll('a, button')).some(el =>
+        el.textContent.trim().includes('New mailbox')
+      );
+    }, { timeout: 20000 });
+
+    await page.evaluate(() => {
+      const newBtn = Array.from(document.querySelectorAll('a, button')).find(el =>
+        el.textContent.trim().includes('New mailbox')
+      );
+      if (newBtn) newBtn.click();
     });
-    const html = await page.content();
-    if (html.includes('Internal error')) throw new Error('Create page failed to load');
+
+    await page.waitForNavigation({ waitUntil: 'networkidle2' });
+    console.log('Create Mailbox page loaded.');
+
     await page.waitForSelector('#localaddress_input', { timeout: 20000 });
   });
 
