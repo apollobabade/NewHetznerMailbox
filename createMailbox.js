@@ -203,22 +203,33 @@ async function createMailbox(freelancer) {
 
     /* ---------------------- Open Email → Mailboxes ---------------------- */
     console.log('Opening Email sidebar...');
-    await page.waitForSelector('button[data-bs-target="#flush-collapse-email"]', { timeout: 20000 });
+    await page.waitForSelector('button[data-bs-target="#flush-collapse-email"]', { timeout: 30000 });
     await page.evaluate(() => {
-      const emailButton = document.querySelector('button[data-bs-target="#flush-collapse-email"]');
-      if (emailButton && emailButton.getAttribute('aria-expanded') === 'false') {
-        emailButton.click();
-      }
+      const btn = document.querySelector('button[data-bs-target="#flush-collapse-email"]');
+      if (btn && btn.getAttribute('aria-expanded') === 'false') btn.click();
     });
 
-    console.log('Clicking Mailboxes link...');
-    await page.waitForSelector('#mailbox a[href="/mail/mailbox/list"]', { timeout: 20000 });
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('#mailbox a[href="/mail/mailbox/list"]'),
-    ]);
+    await page.waitForFunction(() => {
+      const section = document.querySelector('#flush-collapse-email');
+      return section && section.classList.contains('show');
+    }, { timeout: 10000 }).catch(() =>
+      console.log('Sidebar did not visually expand, continuing anyway.')
+    );
 
-    console.log('Mailboxes page loaded.');
+    console.log('Clicking Mailboxes link...');
+    const mailboxLink = await page.$('#mailbox a[href="/mail/mailbox/list"]');
+
+    if (mailboxLink) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2' }),
+        mailboxLink.click(),
+      ]);
+      console.log('Mailboxes page loaded.');
+    } else {
+      console.log('Mailboxes link not found, navigating directly as fallback...');
+      await page.goto('https://konsoleh.hetzner.com/mail/mailbox/list', { waitUntil: 'networkidle2' });
+      console.log('Mailboxes page loaded via fallback.');
+    }
   });
 
   /* ---------------------- Create Mailbox ---------------------- */
