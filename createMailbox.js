@@ -63,6 +63,8 @@ async function createMailbox(freelancer) {
           await page.waitForTimeout(delay);
           await page.reload({ waitUntil: 'networkidle2' }).catch(() => {});
         } else {
+          await page.screenshot({ path: `error-${Date.now()}.png` });
+          console.warn(`Saved screenshot: error-${Date.now()}.png`);
           throw err;
         }
       }
@@ -127,12 +129,33 @@ async function createMailbox(freelancer) {
 
   /* ---------------------- Expand Server & Domain ---------------------- */
   await retry(page, async () => {
+    console.log('Navigating to Products page...');
+    // Sometimes you're dropped on a dashboard — find the "Products" link or tab
+    const productsLink = await page.$x("//a[contains(., 'Products') or contains(., 'product')]");
+    if (productsLink.length > 0) {
+      console.log('Clicking Products link...');
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2' }),
+        productsLink[0].click(),
+      ]);
+    } else {
+      console.log('No Products link found, continuing...');
+    }
+
     console.log('Waiting for server list...');
-    await page.waitForSelector('tr.server', { timeout: 20000 });
+    await page.waitForFunction(() => {
+      return (
+        document.querySelector('tr.server') ||
+        document.querySelector('tr.server-row')
+      );
+    }, { timeout: 30000 });
+
+    const serverExists = await page.$('tr.server') || await page.$('tr.server-row');
+    if (!serverExists) throw new Error('Server list not found after Products page');
 
     console.log('Expanding server row...');
     await page.evaluate(() => {
-      const serverRow = document.querySelector('tr.server');
+      const serverRow = document.querySelector('tr.server, tr.server-row');
       if (serverRow) {
         const expandBtn = serverRow.querySelector('.toggle');
         if (expandBtn) expandBtn.click();
