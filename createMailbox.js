@@ -233,6 +233,7 @@ async function createMailbox(freelancer) {
     page.click('input[type="submit"][value="Save"]'),
   ]);
 
+  /* ---------------------- Handle Errors ---------------------- */
   /* ---------------------- Confirmation ---------------------- */
   const resultMessage = await retry(page, async () => {
     const msg = await page.evaluate(() => {
