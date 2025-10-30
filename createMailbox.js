@@ -42,7 +42,7 @@ app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
    Main mailbox creation logic
 --------------------------------------------------------- */
 async function createMailbox(freelancer) {
-  // --- Double-locked headless mode logic ---
+  // --- Dual mode logic for local vs Railway ---
   const isProduction =
     process.env.RAILWAY_ENVIRONMENT ||
     process.env.NODE_ENV === 'production' ||
@@ -65,6 +65,7 @@ async function createMailbox(freelancer) {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-software-rasterizer',
+      '--single-process'
     ],
     defaultViewport: { width: 1280, height: 800 },
   });
@@ -255,11 +256,19 @@ async function createMailbox(freelancer) {
 
   console.log(`Creating mailbox for ${freelancer.firstName} ${freelancer.lastName}...`);
 
-  // --- Sanitized mailbox name creation ---
-  let cleanLast = freelancer.lastName
+  // --- Sanitized mailbox name creation (handles multi-part names) ---
+  const cleanFirst = freelancer.firstName
+    .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, ''); // remove spaces & special chars
-  const mailboxName = `${freelancer.firstName[0].toLowerCase()}.${cleanLast}`;
+    .replace(/\s+/g, '.')
+    .replace(/[^a-z0-9.]/g, '');
+  const cleanLast = freelancer.lastName
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9]/g, '');
+
+  const mailboxName = `${cleanFirst}.${cleanLast}`;
   const password = generatePassword();
 
   await page.type('#localaddress_input', mailboxName);
@@ -269,11 +278,10 @@ async function createMailbox(freelancer) {
   const description = `erstellt: ${freelancer.createdBy}, request: ${freelancer.requestedBy}, freelancer: ${freelancer.firstName} ${freelancer.lastName}`;
   await page.type('#description_input', description);
 
-  /* ---------------------- Safe single form submit ---------------------- */
   console.log('Submitting form...');
   await page.click('input[type="submit"][value="Save"]');
   await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-  await page.waitForTimeout(3000); // allow page to render alerts
+  await page.waitForTimeout(3000);
 
   console.log('Checking for confirmation or error message...');
   const resultMessage = await page.evaluate(() => {
