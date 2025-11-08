@@ -42,7 +42,6 @@ app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
    Main mailbox creation logic
 --------------------------------------------------------- */
 async function createMailbox(freelancer) {
-  // --- Dual mode logic for local vs Railway ---
   const isProduction =
     process.env.RAILWAY_ENVIRONMENT ||
     process.env.NODE_ENV === 'production' ||
@@ -256,19 +255,20 @@ async function createMailbox(freelancer) {
 
   console.log(`Creating mailbox for ${freelancer.firstName} ${freelancer.lastName}...`);
 
-  // --- Sanitized mailbox name creation (handles multi-part names) ---
-  const cleanFirst = freelancer.firstName
+  // --- New naming rule: first initials + last name ---
+  const firstParts = freelancer.firstName
     .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '.')
-    .replace(/[^a-z0-9.]/g, '');
+    .split(/\s+/)
+    .map(word => word[0]?.toLowerCase() || '');
+
+  const cleanInitials = firstParts.join('');
   const cleanLast = freelancer.lastName
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '')
     .replace(/[^a-z0-9]/g, '');
 
-  const mailboxName = `${cleanFirst}.${cleanLast}`;
+  const mailboxName = `${cleanInitials}.${cleanLast}`;
   const password = generatePassword();
 
   await page.type('#localaddress_input', mailboxName);
